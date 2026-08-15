@@ -6,7 +6,6 @@ import {
   ShieldCheck, 
   BookOpen, 
   CheckCircle2, 
-  AlertCircle, 
   Clock, 
   RotateCcw,
   Sparkles
@@ -75,8 +74,8 @@ export const OccurrenceForm: React.FC<OccurrenceFormProps> = ({ onSuccess }) => 
     const kbObj = articles.find(a => a.id === resolvedKbId);
 
     const newOcc = DataService.createOccurrence({
-      attendantId: currentUser.id,
-      attendantName: currentUser.fullName,
+      attendantId: currentUser?.id || 'usr-dev-admin',
+      attendantName: currentUser?.fullName || 'Atendente',
       shiftId: activeShift?.id,
       categoryId,
       categoryName: categoryObj?.name || 'Geral',
@@ -122,7 +121,7 @@ export const OccurrenceForm: React.FC<OccurrenceFormProps> = ({ onSuccess }) => 
         </div>
         <div className="text-right hidden sm:block">
           <span className="text-[11px] text-slate-400">Atendente Responsável:</span>
-          <p className="text-xs font-semibold text-indigo-300">{currentUser.fullName}</p>
+          <p className="text-xs font-semibold text-indigo-300">{currentUser?.fullName || 'Atendente'}</p>
         </div>
       </div>
 

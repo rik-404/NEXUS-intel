@@ -4,7 +4,7 @@ import { KBArticle } from '../lib/types';
 import { KBSearchBar } from '../components/kb/KBSearchBar';
 import { KBArticleCard } from '../components/kb/KBArticleCard';
 import { KBArticleReader } from '../components/kb/KBArticleReader';
-import { BookOpen, Star, Plus, ShieldCheck } from 'lucide-react';
+import { BookOpen, Star, Plus } from 'lucide-react';
 
 interface KnowledgeBasePageProps {
   selectedArticleForReading?: KBArticle | null;
@@ -32,7 +32,7 @@ export const KnowledgeBasePage: React.FC<KnowledgeBasePageProps> = ({
   const [newContent, setNewContent] = useState('');
   const [newTags, setNewTags] = useState('');
 
-  const canCreateOrManage = ['lider', 'supervisor', 'administrador'].includes(currentUser.role);
+  const canCreateOrManage = currentUser ? ['lider', 'supervisor', 'administrador'].includes(currentUser.role) : false;
 
   const handleReadArticle = (article: KBArticle) => {
     setActiveArticle(article);
@@ -71,8 +71,8 @@ export const KnowledgeBasePage: React.FC<KnowledgeBasePageProps> = ({
       categoryName: catObj?.name || 'Geral',
       summary: newSummary,
       content: newContent,
-      authorId: currentUser.id,
-      authorName: currentUser.fullName,
+      authorId: currentUser?.id || 'usr-dev-admin',
+      authorName: currentUser?.fullName || 'Atendente',
       status: canCreateOrManage ? 'publicado' : 'rascunho',
       tags: newTags.split(',').map(t => t.trim()).filter(Boolean)
     });
@@ -88,8 +88,7 @@ export const KnowledgeBasePage: React.FC<KnowledgeBasePageProps> = ({
 
   // Filter logic
   const filteredArticles = articles.filter((art) => {
-    // Non-supervisors only see 'publicado' unless they are author
-    if (!canCreateOrManage && art.status !== 'publicado' && art.authorId !== currentUser.id) {
+    if (!canCreateOrManage && art.status !== 'publicado' && art.authorId !== currentUser?.id) {
       return false;
     }
 

@@ -84,7 +84,9 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentTab, onSelectTab, userR
 
                 <div className="flex items-center space-x-1.5">
                   {item.restricted && (
-                    <Lock className="w-3 h-3 text-amber-400" title="Acesso Restrito a Líderes/Supervisores" />
+                    <span title="Acesso Restrito a Líderes/Supervisores">
+                      <Lock className="w-3 h-3 text-amber-400" />
+                    </span>
                   )}
                   {isActive && (
                     <ChevronRight className="w-3.5 h-3.5 text-indigo-400" />
