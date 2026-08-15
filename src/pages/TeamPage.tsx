@@ -1,153 +1,138 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { DataService } from '../lib/supabase';
+import { UserProfile, UserRole } from '../lib/types';
 import { 
   Users, 
-  Lock, 
-  ShieldAlert, 
-  Award, 
   UserPlus, 
+  Search, 
+  ShieldCheck, 
+  Lock, 
   CheckCircle2, 
-  X, 
-  UserCheck, 
-  UserX, 
-  Edit2, 
-  Shield, 
-  Search,
-  Key
+  XCircle, 
+  Mail, 
+  Building2,
+  KeyRound,
+  RefreshCw
 } from 'lucide-react';
-import { DataService } from '../lib/supabase';
-import { UserRole, UserProfile } from '../lib/types';
 
 interface TeamPageProps {
   userRole: UserRole;
 }
 
 export const TeamPage: React.FC<TeamPageProps> = ({ userRole }) => {
-  const isAuthorized = ['lider', 'supervisor', 'administrador'].includes(userRole);
-  const [profiles, setProfiles] = useState<UserProfile[]>(() => DataService.getAllProfiles());
-  const occurrences = DataService.getOccurrences();
-
+  const [users, setUsers] = useState<UserProfile[]>(() => DataService.getAllProfiles());
   const [searchTerm, setSearchTerm] = useState('');
-  const [roleFilter, setRoleFilter] = useState<string>('ALL');
-
-  // Internal User Creation Modal State
-  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [selectedRoleFilter, setSelectedRoleFilter] = useState<string>('ALL');
+  const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<UserProfile | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
 
-  const [newFullName, setNewFullName] = useState('');
-  const [newEmail, setNewEmail] = useState('');
+  // Modal Form State
+  const [fullName, setFullName] = useState('');
+  const [email, setEmail] = useState('');
   const [newPassword, setNewPassword] = useState('');
-  const [newRole, setNewRole] = useState<UserRole>('atendente');
-  const [newTeam, setNewTeam] = useState('Nível 1 - Geral');
+  const [role, setRole] = useState<UserRole>('atendente');
+  const [teamName, setTeamName] = useState('Suporte Geral');
   const [notification, setNotification] = useState<string | null>(null);
 
-  // Determine allowed roles to assign based on current logged user's authority hierarchy
-  const getAllowedRolesToAssign = (creatorRole: UserRole): { role: UserRole; label: string }[] => {
-    const allRoles: { role: UserRole; label: string }[] = [
-      { role: 'administrador', label: 'Administrador (Dev)' },
-      { role: 'supervisor', label: 'Supervisor' },
-      { role: 'lider', label: 'Líder de Equipe' },
-      { role: 'atendente', label: 'Atendente' },
-      { role: 'auditor', label: 'Auditor LGPD' },
-    ];
+  // Fetch users live from Supabase PostgreSQL table on mount
+  const loadUsersLive = async () => {
+    setIsLoading(true);
+    const liveProfiles = await DataService.fetchAllProfilesFromSupabase();
+    setUsers(liveProfiles);
+    setIsLoading(false);
+  };
 
-    if (creatorRole === 'administrador') {
-      return allRoles;
+  useEffect(() => {
+    loadUsersLive();
+  }, []);
+
+  // Determine authorized roles that logged-in user can create/manage based on RBAC hierarchy
+  const getAssignableRoles = (): UserRole[] => {
+    if (userRole === 'administrador') {
+      return ['administrador', 'supervisor', 'lider', 'atendente', 'auditor'];
     }
-    if (creatorRole === 'supervisor') {
-      return allRoles.filter(r => ['lider', 'atendente', 'auditor'].includes(r.role));
+    if (userRole === 'supervisor') {
+      return ['lider', 'atendente', 'auditor'];
     }
-    if (creatorRole === 'lider') {
-      return allRoles.filter(r => r.role === 'atendente');
+    if (userRole === 'lider') {
+      return ['atendente'];
     }
     return [];
   };
 
-  const allowedRoles = getAllowedRolesToAssign(userRole);
-
-  if (!isAuthorized) {
-    return (
-      <div className="glass-panel rounded-2xl border border-rose-500/30 bg-rose-950/20 p-12 text-center space-y-4 max-w-xl mx-auto my-12">
-        <div className="w-16 h-16 rounded-2xl bg-rose-500/10 border border-rose-500/20 flex items-center justify-center mx-auto text-rose-400">
-          <Lock className="w-8 h-8" />
-        </div>
-        <h2 className="text-lg font-bold text-white">Acesso Restrito — Governança RBAC</h2>
-        <p className="text-xs text-slate-300 leading-relaxed">
-          O gerenciamento interno de usuários e as métricas da equipe são **visíveis apenas para Líderes, Supervisores e Administradores**.
-        </p>
-      </div>
-    );
-  }
+  const assignableRoles = getAssignableRoles();
 
   const handleOpenCreateModal = () => {
     setEditingUser(null);
-    setNewFullName('');
-    setNewEmail('');
+    setFullName('');
+    setEmail('');
     setNewPassword('');
-    setNewRole(allowedRoles[0]?.role || 'atendente');
-    setNewTeam('Nível 1 - Geral');
-    setShowCreateModal(true);
+    setRole(assignableRoles[0] || 'atendente');
+    setTeamName('Suporte Geral');
+    setIsModalOpen(true);
   };
 
   const handleOpenEditModal = (user: UserProfile) => {
     setEditingUser(user);
-    setNewFullName(user.fullName);
-    setNewEmail(user.email);
+    setFullName(user.fullName);
+    setEmail(user.email);
     setNewPassword('');
-    setNewRole(user.role);
-    setNewTeam(user.teamName);
-    setShowCreateModal(true);
+    setRole(user.role);
+    setTeamName(user.teamName);
+    setIsModalOpen(true);
   };
 
-  const handleSaveUser = (e: React.FormEvent) => {
+  const handleSaveUser = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newFullName.trim() || !newEmail.trim()) return;
+    if (!fullName.trim() || !email.trim()) return;
 
     if (editingUser) {
-      // Update existing user
       DataService.updateUser(editingUser.id, {
-        fullName: newFullName.trim(),
-        email: newEmail.trim().toLowerCase(),
-        role: newRole,
-        teamName: newTeam
+        fullName,
+        email,
+        role,
+        teamName
       });
-      setNotification(`Usuário ${newFullName} e credenciais atualizados com sucesso!`);
+      setNotification(`Usuário "${fullName}" atualizado com sucesso!`);
     } else {
-      if (!newPassword.trim()) {
-        alert('Por favor, defina uma senha inicial para o novo colaborador.');
-        return;
-      }
-
-      // Create new user
-      const createdUser = DataService.registerUser({
-        fullName: newFullName.trim(),
-        email: newEmail.trim().toLowerCase(),
-        role: newRole,
-        teamName: newTeam
+      DataService.registerUser({
+        fullName,
+        email,
+        role,
+        teamName
       });
-      setNotification(`Usuário ${createdUser.fullName} (${createdUser.role}) cadastrado com sucesso!`);
+      setNotification(`Novo usuário "${fullName}" cadastrado com sucesso!`);
     }
 
-    setProfiles(DataService.getAllProfiles());
-    setShowCreateModal(false);
+    // Refresh live list from Supabase
+    await loadUsersLive();
+    setIsModalOpen(false);
     setTimeout(() => setNotification(null), 4000);
   };
 
-  const handleToggleActive = (user: UserProfile) => {
-    DataService.toggleUserActive(user.id);
-    setProfiles(DataService.getAllProfiles());
-    setNotification(`Status do usuário ${user.fullName} alterado para ${user.isActive ? 'Inativo' : 'Ativo'}.`);
-    setTimeout(() => setNotification(null), 4000);
+  const handleToggleActive = async (userId: string) => {
+    DataService.toggleUserActive(userId);
+    await loadUsersLive();
   };
 
-  // Filter profiles
-  const filteredProfiles = profiles.filter((p) => {
+  const filteredUsers = users.filter(u => {
+    const matchesRole = selectedRoleFilter === 'ALL' || u.role === selectedRoleFilter;
+    const term = searchTerm.toLowerCase();
     const matchesSearch = 
-      p.fullName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      p.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      p.teamName.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesRole = roleFilter === 'ALL' || p.role === roleFilter;
-    return matchesSearch && matchesRole;
+      u.fullName.toLowerCase().includes(term) ||
+      u.email.toLowerCase().includes(term) ||
+      u.teamName.toLowerCase().includes(term);
+    return matchesRole && matchesSearch;
   });
+
+  const roleBadges: Record<UserRole, { label: string; color: string }> = {
+    atendente: { label: 'Atendente', color: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' },
+    lider: { label: 'Líder', color: 'bg-blue-500/10 text-blue-400 border-blue-500/20' },
+    supervisor: { label: 'Supervisor', color: 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20' },
+    administrador: { label: 'Administrador (Dev)', color: 'bg-purple-500/10 text-purple-400 border-purple-500/20' },
+    auditor: { label: 'Auditor', color: 'bg-amber-500/10 text-amber-400 border-amber-500/20' }
+  };
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -156,268 +141,232 @@ export const TeamPage: React.FC<TeamPageProps> = ({ userRole }) => {
         <div>
           <h1 className="text-xl font-extrabold text-white flex items-center gap-2">
             <Users className="w-5 h-5 text-indigo-400" />
-            Gerenciamento Interno de Usuários & Equipe
+            Gestão de Equipe & Usuários Internos
           </h1>
           <p className="text-xs text-slate-400 mt-0.5">
-            Cadastro de novos colaboradores com definição de senha e controle hierárquico de papéis RBAC.
+            Cadastre novos colaboradores e gerencie cargos respeitando a hierarquia da organização.
           </p>
         </div>
 
         <div className="flex items-center space-x-3">
           <button
-            onClick={handleOpenCreateModal}
-            className="px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs shadow-lg shadow-indigo-500/25 transition-all flex items-center space-x-2 shrink-0"
+            onClick={loadUsersLive}
+            disabled={isLoading}
+            className="p-2.5 rounded-xl bg-slate-900 border border-slate-800 hover:bg-slate-800 text-slate-400 hover:text-slate-200 transition-colors"
+            title="Atualizar lista do Supabase"
           >
-            <UserPlus className="w-4 h-4" />
-            <span>Cadastrar Novo Usuário</span>
+            <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin text-indigo-400' : ''}`} />
           </button>
+
+          {assignableRoles.length > 0 && (
+            <button
+              onClick={handleOpenCreateModal}
+              className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white font-semibold text-xs shadow-lg shadow-indigo-500/25 transition-all flex items-center space-x-2"
+            >
+              <UserPlus className="w-4 h-4" />
+              <span>Cadastrar Novo Usuário</span>
+            </button>
+          )}
         </div>
       </div>
 
       {notification && (
-        <div className="p-4 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-xs font-medium flex items-center gap-2 animate-fade-in">
+        <div className="p-4 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-xs font-medium flex items-center gap-2">
           <CheckCircle2 className="w-4 h-4 text-emerald-400" />
           <span>{notification}</span>
         </div>
       )}
 
-      {/* Role Authority Banner */}
-      <div className="p-4 rounded-2xl bg-indigo-950/40 border border-indigo-500/30 flex items-center justify-between text-xs text-indigo-200">
-        <div className="flex items-center space-x-3">
-          <Shield className="w-5 h-5 text-indigo-400 shrink-0" />
-          <div>
-            <p className="font-semibold">Nível de Permissão Atual: <strong className="text-white uppercase font-mono">{userRole}</strong></p>
-            <p className="text-[11px] text-indigo-300/80 mt-0.5">
-              {userRole === 'administrador' && 'Como Administrador/Dev, você pode cadastrar e definir senha para TODOS os cargos.'}
-              {userRole === 'supervisor' && 'Como Supervisor, você pode cadastrar usuários e senhas para cargos abaixo do seu (Líder, Atendente e Auditor).'}
-              {userRole === 'lider' && 'Como Líder de Equipe, você pode cadastrar atendentes e definir suas senhas iniciais.'}
-            </p>
-          </div>
+      {/* Filters Bar */}
+      <div className="glass-panel p-4 rounded-2xl border border-slate-800 flex flex-col sm:flex-row gap-4 justify-between items-center">
+        <div className="relative w-full sm:w-80">
+          <Search className="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
+          <input
+            type="text"
+            placeholder="Buscar por nome, e-mail ou equipe..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="w-full bg-slate-900 border border-slate-800 rounded-xl pl-9 pr-3 py-2 text-xs text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          />
         </div>
 
-        <div className="hidden sm:block text-right font-mono text-[10px] text-indigo-300">
-          Cargos permitidos: {allowedRoles.map(r => r.role).join(', ')}
+        <div className="flex items-center space-x-3 w-full sm:w-auto justify-end">
+          <span className="text-xs text-slate-400 font-medium">Filtrar Cargo:</span>
+          <select
+            value={selectedRoleFilter}
+            onChange={(e) => setSelectedRoleFilter(e.target.value)}
+            className="bg-slate-900 border border-slate-800 text-xs text-slate-200 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          >
+            <option value="ALL">Todos os Cargos</option>
+            <option value="administrador">Administrador</option>
+            <option value="supervisor">Supervisor</option>
+            <option value="lider">Líder</option>
+            <option value="atendente">Atendente</option>
+            <option value="auditor">Auditor</option>
+          </select>
         </div>
       </div>
 
-      {/* Table & Filters */}
-      <div className="glass-panel rounded-2xl border border-slate-800 p-6 shadow-xl space-y-4">
-        <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pb-2">
-          <h3 className="text-sm font-bold text-white flex items-center gap-2">
-            <Award className="w-4 h-4 text-amber-400" />
-            Lista de Usuários Internos ({filteredProfiles.length})
-          </h3>
-
-          <div className="flex items-center space-x-3 w-full sm:w-auto">
-            <div className="relative flex-1 sm:w-64">
-              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-              <input
-                type="text"
-                placeholder="Buscar por nome, e-mail..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full bg-slate-900 border border-slate-800 rounded-xl pl-9 pr-3 py-1.5 text-xs text-slate-200"
-              />
-            </div>
-
-            <select
-              value={roleFilter}
-              onChange={(e) => setRoleFilter(e.target.value)}
-              className="bg-slate-900 border border-slate-800 rounded-xl px-3 py-1.5 text-xs text-slate-200"
-            >
-              <option value="ALL">Todos os Cargos</option>
-              <option value="administrador">Administrador</option>
-              <option value="supervisor">Supervisor</option>
-              <option value="lider">Líder de Equipe</option>
-              <option value="atendente">Atendente</option>
-              <option value="auditor">Auditor LGPD</option>
-            </select>
-          </div>
-        </div>
-
+      {/* Users Table */}
+      <div className="glass-panel rounded-2xl border border-slate-800 overflow-hidden shadow-xl">
         <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs text-slate-300 border-collapse">
+          <table className="w-full text-left border-collapse">
             <thead>
-              <tr className="border-b border-slate-800 text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
-                <th className="py-3 px-4">Usuário</th>
-                <th className="py-3 px-4">E-mail Corporativo</th>
-                <th className="py-3 px-4">Papel (RBAC)</th>
-                <th className="py-3 px-4">Equipe</th>
-                <th className="py-3 px-4">Status</th>
-                <th className="py-3 px-4 text-right">Ações</th>
+              <tr className="border-b border-slate-800 bg-slate-900/60 text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
+                <th className="p-4">Colaborador</th>
+                <th className="p-4">Cargo / Autoridade</th>
+                <th className="p-4">Equipe</th>
+                <th className="p-4">Status</th>
+                <th className="p-4 text-right">Ações</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-800">
-              {filteredProfiles.map((user) => {
-                const canEditThisUser = 
-                  userRole === 'administrador' ||
-                  (userRole === 'supervisor' && ['lider', 'atendente', 'auditor'].includes(user.role)) ||
-                  (userRole === 'lider' && user.role === 'atendente');
-
-                return (
-                  <tr key={user.id} className="hover:bg-slate-800/40 transition-colors">
-                    <td className="py-3.5 px-4 font-semibold text-slate-200 flex items-center space-x-2.5">
-                      <div className="w-8 h-8 rounded-full bg-slate-700 flex items-center justify-center font-bold text-xs text-slate-200 border border-slate-600">
-                        {user.fullName.split(' ').map(n => n[0]).slice(0, 2).join('')}
+            <tbody className="divide-y divide-slate-800 text-xs text-slate-300">
+              {filteredUsers.map((u) => (
+                <tr key={u.id} className="hover:bg-slate-800/40 transition-colors">
+                  <td className="p-4">
+                    <div className="flex items-center space-x-3">
+                      <div className="w-9 h-9 rounded-xl bg-slate-800 border border-slate-700 flex items-center justify-center font-bold text-slate-300 text-xs">
+                        {u.fullName.split(' ').map(n => n[0]).slice(0, 2).join('')}
                       </div>
                       <div>
-                        <span className="block font-bold">{user.fullName}</span>
-                        <span className="text-[10px] text-slate-500 font-mono">ID: {user.id}</span>
+                        <p className="font-semibold text-white">{u.fullName}</p>
+                        <p className="text-[11px] text-slate-400">{u.email}</p>
                       </div>
-                    </td>
-                    <td className="py-3.5 px-4 text-slate-400 font-mono text-[11px]">
-                      {user.email}
-                    </td>
-                    <td className="py-3.5 px-4">
-                      <span className={`inline-block px-2.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider border ${
-                        user.role === 'administrador' ? 'bg-purple-500/15 text-purple-300 border-purple-500/30' :
-                        user.role === 'supervisor' ? 'bg-indigo-500/15 text-indigo-300 border-indigo-500/30' :
-                        user.role === 'lider' ? 'bg-blue-500/15 text-blue-300 border-blue-500/30' :
-                        'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
-                      }`}>
-                        {user.role}
-                      </span>
-                    </td>
-                    <td className="py-3.5 px-4 text-slate-300">
-                      {user.teamName}
-                    </td>
-                    <td className="py-3.5 px-4">
-                      <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-semibold ${
-                        user.isActive 
-                          ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
-                          : 'bg-rose-500/10 text-rose-400 border border-rose-500/20'
-                      }`}>
-                        {user.isActive ? 'Ativo' : 'Inativo'}
-                      </span>
-                    </td>
-                    <td className="py-3.5 px-4 text-right">
-                      {canEditThisUser ? (
-                        <div className="flex items-center justify-end space-x-2">
-                          <button
-                            onClick={() => handleOpenEditModal(user)}
-                            className="p-1.5 rounded-lg bg-slate-800 hover:bg-indigo-600/20 hover:text-indigo-400 text-slate-400 transition-colors"
-                            title="Editar usuário e senha"
-                          >
-                            <Edit2 className="w-3.5 h-3.5" />
-                          </button>
+                    </div>
+                  </td>
 
-                          <button
-                            onClick={() => handleToggleActive(user)}
-                            className={`p-1.5 rounded-lg transition-colors ${
-                              user.isActive 
-                                ? 'bg-rose-500/10 hover:bg-rose-500/20 text-rose-400' 
-                                : 'bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400'
-                            }`}
-                            title={user.isActive ? 'Desativar usuário' : 'Ativar usuário'}
-                          >
-                            {user.isActive ? <UserX className="w-3.5 h-3.5" /> : <UserCheck className="w-3.5 h-3.5" />}
-                          </button>
-                        </div>
+                  <td className="p-4">
+                    <span className={`px-2.5 py-1 rounded-lg border text-[11px] font-semibold ${roleBadges[u.role]?.color}`}>
+                      {roleBadges[u.role]?.label || u.role}
+                    </span>
+                  </td>
+
+                  <td className="p-4 font-medium text-slate-300">
+                    {u.teamName}
+                  </td>
+
+                  <td className="p-4">
+                    <button
+                      onClick={() => handleToggleActive(u.id)}
+                      className={`inline-flex items-center space-x-1 px-2.5 py-1 rounded-full text-[10px] font-bold border transition-colors ${
+                        u.isActive 
+                          ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' 
+                          : 'bg-rose-500/10 text-rose-400 border-rose-500/20'
+                      }`}
+                    >
+                      {u.isActive ? (
+                        <>
+                          <CheckCircle2 className="w-3 h-3" />
+                          <span>ATIVO</span>
+                        </>
                       ) : (
-                        <span className="text-[10px] text-slate-500 italic">Sem permissão</span>
+                        <>
+                          <XCircle className="w-3 h-3" />
+                          <span>INATIVO</span>
+                        </>
                       )}
-                    </td>
-                  </tr>
-                );
-              })}
+                    </button>
+                  </td>
+
+                  <td className="p-4 text-right">
+                    <button
+                      onClick={() => handleOpenEditModal(u)}
+                      className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-indigo-300 font-semibold text-xs transition-colors"
+                    >
+                      Editar
+                    </button>
+                  </td>
+                </tr>
+              ))}
             </tbody>
           </table>
         </div>
       </div>
 
-      {/* Modal for Creating / Editing User with Password */}
-      {showCreateModal && (
+      {/* Register / Edit Modal */}
+      {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-fade-in">
-          <div className="glass-panel w-full max-w-lg rounded-2xl border border-slate-700 bg-slate-900 p-6 shadow-2xl space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-              <h3 className="text-base font-bold text-white flex items-center gap-2">
-                <UserPlus className="w-5 h-5 text-indigo-400" />
-                {editingUser ? 'Editar Usuário e Senha' : 'Cadastrar Novo Usuário e Definir Senha'}
-              </h3>
-              <button 
-                onClick={() => setShowCreateModal(false)}
-                className="p-1 rounded-lg text-slate-400 hover:text-white"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
+          <div className="glass-panel w-full max-w-md rounded-2xl border border-slate-700 bg-slate-900 p-6 shadow-2xl space-y-4">
+            <h3 className="text-base font-bold text-white flex items-center gap-2">
+              <ShieldCheck className="w-5 h-5 text-indigo-400" />
+              {editingUser ? `Editar Usuário: ${editingUser.fullName}` : 'Cadastrar Novo Usuário'}
+            </h3>
 
-            <form onSubmit={handleSaveUser} className="space-y-4 text-xs text-slate-300">
+            <form onSubmit={handleSaveUser} className="space-y-4 text-xs">
               <div>
-                <label className="block font-semibold mb-1">Nome Completo *</label>
+                <label className="block font-semibold text-slate-300 mb-1">Nome Completo *</label>
                 <input
                   type="text"
                   required
-                  placeholder="Nome do colaborador"
-                  value={newFullName}
-                  onChange={(e) => setNewFullName(e.target.value)}
+                  placeholder="Ex: Carlos Eduardo Silva"
+                  value={fullName}
+                  onChange={(e) => setFullName(e.target.value)}
                   className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-100"
                 />
               </div>
 
               <div>
-                <label className="block font-semibold mb-1">E-mail Corporativo *</label>
-                <input
-                  type="email"
-                  required
-                  placeholder="colaborador@empresa.com"
-                  value={newEmail}
-                  onChange={(e) => setNewEmail(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-100"
-                />
-              </div>
-
-              <div>
-                <label className="block font-semibold mb-1 flex items-center justify-between">
-                  <span>Senha de Acesso {editingUser ? '(Deixe em branco para manter a atual)' : '*'}</span>
-                  <Key className="w-3.5 h-3.5 text-indigo-400" />
-                </label>
-                <input
-                  type="password"
-                  required={!editingUser}
-                  placeholder={editingUser ? '•••••••• (manter atual)' : 'Defina a senha inicial (ex: Temp#2026)'}
-                  value={newPassword}
-                  onChange={(e) => setNewPassword(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-100 font-mono"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block font-semibold mb-1">Cargo / Papel RBAC *</label>
-                  <select
-                    value={newRole}
-                    onChange={(e) => setNewRole(e.target.value as UserRole)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-100"
-                  >
-                    {allowedRoles.map((r) => (
-                      <option key={r.role} value={r.role}>
-                        {r.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block font-semibold mb-1">Equipe</label>
+                <label className="block font-semibold text-slate-300 mb-1">E-mail Corporativo *</label>
+                <div className="relative">
+                  <Mail className="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
                   <input
-                    type="text"
-                    value={newTeam}
-                    onChange={(e) => setNewTeam(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-100"
+                    type="email"
+                    required
+                    placeholder="carlos.silva@empresa.com"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-9 pr-3 py-2 text-xs text-slate-100"
                   />
                 </div>
               </div>
 
-              <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 text-[11px] text-slate-400">
-                <span>Autorizado por: </span>
-                <strong className="text-indigo-300 capitalize">{userRole}</strong>
+              <div>
+                <label className="block font-semibold text-slate-300 mb-1">Senha de Acesso *</label>
+                <div className="relative">
+                  <KeyRound className="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="password"
+                    placeholder={editingUser ? 'Deixe em branco para manter a senha atual' : '••••••••'}
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-9 pr-3 py-2 text-xs text-slate-100"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block font-semibold text-slate-300 mb-1">Cargo / Nível de Acesso *</label>
+                <select
+                  value={role}
+                  onChange={(e) => setRole(e.target.value as UserRole)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-100"
+                >
+                  {assignableRoles.map(r => (
+                    <option key={r} value={r}>
+                      {roleBadges[r]?.label || r}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block font-semibold text-slate-300 mb-1">Equipe / Setor</label>
+                <div className="relative">
+                  <Building2 className="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    placeholder="Ex: Suporte N2, Cobrança, SAC..."
+                    value={teamName}
+                    onChange={(e) => setTeamName(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-9 pr-3 py-2 text-xs text-slate-100"
+                  />
+                </div>
               </div>
 
               <div className="flex justify-end space-x-3 pt-2">
                 <button
                   type="button"
-                  onClick={() => setShowCreateModal(false)}
+                  onClick={() => setIsModalOpen(false)}
                   className="px-4 py-2 rounded-xl bg-slate-800 text-slate-300 font-semibold"
                 >
                   Cancelar
@@ -426,7 +375,7 @@ export const TeamPage: React.FC<TeamPageProps> = ({ userRole }) => {
                   type="submit"
                   className="px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold shadow-lg shadow-indigo-500/25"
                 >
-                  {editingUser ? 'Salvar Alterações' : 'Confirmar Cadastro'}
+                  Salvar Usuário
                 </button>
               </div>
             </form>

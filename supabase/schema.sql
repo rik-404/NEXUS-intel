@@ -1,178 +1,156 @@
--- =============================================================================
--- CENTRO DE INTELIGÊNCIA DO ATENDIMENTO - SCHEMA POSTGRESQL (SUPABASE)
--- Script 100% Idempotente e Re-executável
--- =============================================================================
+-- =================================================================------------
+-- CENTRO DE INTELIGÊNCIA DO ATENDIMENTO (NEXUS) - SCHEMA COMPLETO SUPABASE
+-- DDL Idempotente com Suporte a RLS, Enum, Vector e 20 Categorias Oficiais
+-- =================================================================------------
 
--- Habilitar extensão pgvector para Fase 3 & 4 (Busca Semântica por Embeddings)
+-- Ativar extensões necessárias
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE EXTENSION IF NOT EXISTS "vector";
 
--- 1. CRIAR TIPOS CUSTOMIZADOS E ENUMS (PROTEGIDOS)
+-- 1. ENUMS CUSTOMIZADOS (Protegidos contra recriação duplicada)
 -- -----------------------------------------------------------------------------
 DO $$ BEGIN
-    CREATE TYPE user_role AS ENUM ('atendente', 'lider', 'supervisor', 'administrador', 'auditor');
+    CREATE TYPE public.user_role AS ENUM ('atendente', 'lider', 'supervisor', 'administrador', 'auditor');
 EXCEPTION
     WHEN duplicate_object THEN null;
 END $$;
 
 DO $$ BEGIN
-    CREATE TYPE kb_article_status AS ENUM ('rascunho', 'em_revisao', 'publicado', 'arquivado');
+    CREATE TYPE public.shift_status AS ENUM ('ativo', 'encerrado', 'pausado');
 EXCEPTION
     WHEN duplicate_object THEN null;
 END $$;
 
 DO $$ BEGIN
-    CREATE TYPE incident_status AS ENUM ('aberto', 'em_analise', 'resolvido', 'cancelado');
+    CREATE TYPE public.article_status AS ENUM ('rascunho', 'em_revisao', 'publicado', 'arquivado');
 EXCEPTION
     WHEN duplicate_object THEN null;
 END $$;
 
 DO $$ BEGIN
-    CREATE TYPE incident_severity AS ENUM ('baixa', 'media', 'alta', 'critica');
+    CREATE TYPE public.incident_severity AS ENUM ('baixa', 'media', 'alta', 'critica');
 EXCEPTION
     WHEN duplicate_object THEN null;
 END $$;
 
-DO $$ BEGIN
-    CREATE TYPE suggestion_status AS ENUM ('pendente', 'em_revisao', 'aprovado', 'rejeitado');
-EXCEPTION
-    WHEN duplicate_object THEN null;
-END $$;
-
--- 2. TABELAS PRINCIPAIS
+-- 2. ESTRUTURA DE TABELAS (DDL)
 -- -----------------------------------------------------------------------------
 
--- Remover a FK restritiva em profiles caso tenha sido criada previamente
-ALTER TABLE IF EXISTS public.profiles DROP CONSTRAINT IF EXISTS profiles_id_fkey;
-
--- Profiles (Tabela de Usuários/Perfis)
+-- Tabela de Perfis de Usuários (sem restrição FK estrita em auth.users para permitir setup inicial)
 CREATE TABLE IF NOT EXISTS public.profiles (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     full_name TEXT NOT NULL,
     email TEXT UNIQUE NOT NULL,
-    avatar_url TEXT,
-    role user_role NOT NULL DEFAULT 'administrador',
-    team_name TEXT DEFAULT 'Engenharia & Dev',
+    role public.user_role NOT NULL DEFAULT 'atendente',
+    team_name TEXT DEFAULT 'Geral',
     is_active BOOLEAN NOT NULL DEFAULT true,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- Categorias de Atendimento e Base de Conhecimento
+-- Categorias de Atendimento
 CREATE TABLE IF NOT EXISTS public.categories (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    name TEXT UNIQUE NOT NULL,
+    name TEXT NOT NULL,
     slug TEXT UNIQUE NOT NULL,
     description TEXT,
-    icon_name TEXT DEFAULT 'folder',
+    icon_name TEXT,
     display_order INT DEFAULT 0,
-    created_at TIMESTAMPTZ DEFAULT NOW()
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- Assuntos Específicos
+-- Assuntos Específicos por Categoria
 CREATE TABLE IF NOT EXISTS public.subjects (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    category_id UUID NOT NULL REFERENCES public.categories(id) ON DELETE CASCADE,
+    category_id UUID REFERENCES public.categories(id) ON DELETE CASCADE,
     name TEXT NOT NULL,
     description TEXT,
-    is_active BOOLEAN DEFAULT true,
-    created_at TIMESTAMPTZ DEFAULT NOW()
+    is_active BOOLEAN NOT NULL DEFAULT true,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- Sintomas Padronizados (Fase 3/4 - IA Ready)
+-- Sintomas Padronizados (Fase 3 com pgvector)
 CREATE TABLE IF NOT EXISTS public.standard_symptoms (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    subject_id UUID REFERENCES public.subjects(id) ON DELETE SET NULL,
+    subject_id UUID REFERENCES public.subjects(id) ON DELETE CASCADE,
     code TEXT UNIQUE NOT NULL,
     title TEXT NOT NULL,
     description TEXT,
     embedding vector(1536),
-    created_at TIMESTAMPTZ DEFAULT NOW()
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- Turnos de Trabalho (Fase 2)
+-- Turnos de Atendimento
 CREATE TABLE IF NOT EXISTS public.shifts (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     title TEXT NOT NULL,
     supervisor_id UUID REFERENCES public.profiles(id),
+    status public.shift_status NOT NULL DEFAULT 'ativo',
     started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    ended_at TIMESTAMPTZ,
-    status TEXT CHECK (status IN ('ativo', 'encerrado')) DEFAULT 'ativo',
-    created_at TIMESTAMPTZ DEFAULT NOW()
+    ended_at TIMESTAMPTZ
 );
 
--- Base de Conhecimento (Artigos)
+-- Passagem de Turno (Handover)
+CREATE TABLE IF NOT EXISTS public.shift_handovers (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    shift_id UUID REFERENCES public.shifts(id) ON DELETE CASCADE,
+    author_id UUID REFERENCES public.profiles(id),
+    pending_tasks TEXT,
+    shift_alerts TEXT,
+    observations TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Ocorrências de Atendimento
+CREATE TABLE IF NOT EXISTS public.occurrences (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    protocol_number TEXT UNIQUE NOT NULL,
+    attendant_id UUID REFERENCES public.profiles(id),
+    shift_id UUID REFERENCES public.shifts(id),
+    category_id UUID REFERENCES public.categories(id),
+    subject_id UUID REFERENCES public.subjects(id),
+    symptom_id UUID REFERENCES public.standard_symptoms(id),
+    client_identifier_masked TEXT NOT NULL,
+    system_name TEXT NOT NULL,
+    free_description TEXT NOT NULL,
+    recurrence_count INT DEFAULT 1,
+    duration_seconds INT DEFAULT 0,
+    resolved_by_kb_article_id UUID,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Artigos da Base de Conhecimento
 CREATE TABLE IF NOT EXISTS public.kb_articles (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     title TEXT NOT NULL,
     slug TEXT UNIQUE NOT NULL,
     summary TEXT,
     content TEXT NOT NULL,
-    category_id UUID NOT NULL REFERENCES public.categories(id),
-    author_id UUID NOT NULL REFERENCES public.profiles(id),
-    reviewer_id UUID REFERENCES public.profiles(id),
-    status kb_article_status NOT NULL DEFAULT 'publicado',
-    current_version INT NOT NULL DEFAULT 1,
+    category_id UUID REFERENCES public.categories(id),
+    author_id UUID REFERENCES public.profiles(id),
+    status public.article_status NOT NULL DEFAULT 'rascunho',
+    current_version INT DEFAULT 1,
     helpful_count INT DEFAULT 0,
     not_helpful_count INT DEFAULT 0,
     views_count INT DEFAULT 0,
-    tags TEXT[] DEFAULT '{}',
-    linked_symptom_id UUID REFERENCES public.standard_symptoms(id),
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    updated_at TIMESTAMPTZ DEFAULT NOW()
-);
-
--- Ocorrências / Atendimentos Registrados (Fase 1)
-CREATE TABLE IF NOT EXISTS public.occurrences (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    protocol_number TEXT UNIQUE NOT NULL,
-    attendant_id UUID NOT NULL REFERENCES public.profiles(id),
-    shift_id UUID REFERENCES public.shifts(id),
-    category_id UUID NOT NULL REFERENCES public.categories(id),
-    subject_id UUID NOT NULL REFERENCES public.subjects(id),
-    symptom_id UUID REFERENCES public.standard_symptoms(id),
-    
-    client_identifier_masked TEXT,
-    system_name TEXT NOT NULL,
-    free_description TEXT NOT NULL,
-    recurrence_count INT DEFAULT 1,
-    duration_seconds INT DEFAULT 0,
-    
-    resolved_by_kb_article_id UUID REFERENCES public.kb_articles(id),
-    
+    tags TEXT[],
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- 3. TRIGGER AUTOMÁTICO DE SYNC DE USUÁRIOS AUTH DO SUPABASE
--- -----------------------------------------------------------------------------
-CREATE OR REPLACE FUNCTION public.handle_new_user()
-RETURNS trigger AS $$
-BEGIN
-  INSERT INTO public.profiles (id, full_name, email, role, team_name)
-  VALUES (
-    new.id,
-    COALESCE(new.raw_user_meta_data->>'full_name', split_part(new.email, '@', 1)),
-    new.email,
-    'administrador',
-    'Engenharia & Dev'
-  )
-  ON CONFLICT (email) DO UPDATE
-  SET role = 'administrador', full_name = EXCLUDED.full_name;
-  RETURN new;
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+-- Módulo de Incidentes Críticos (Fase 3)
+CREATE TABLE IF NOT EXISTS public.incidents (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    title TEXT NOT NULL,
+    description TEXT,
+    severity public.incident_severity NOT NULL DEFAULT 'media',
+    is_active BOOLEAN DEFAULT true,
+    affected_system TEXT,
+    started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    resolved_at TIMESTAMPTZ
+);
 
--- Trigger para auth.users se existir no Supabase
-DO $$ BEGIN
-  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'auth' AND table_name = 'users') THEN
-    DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
-    CREATE TRIGGER on_auth_user_created
-      AFTER INSERT ON auth.users
-      FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
-  END IF;
-END $$;
-
--- 4. HABILITAR ROW LEVEL SECURITY (RLS)
+-- 3. HABILITAR ROW LEVEL SECURITY (RLS)
 -- -----------------------------------------------------------------------------
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.categories ENABLE ROW LEVEL SECURITY;
@@ -192,6 +170,9 @@ CREATE POLICY "Edição de Perfis" ON public.profiles FOR UPDATE USING (true);
 DROP POLICY IF EXISTS "Leitura de Categorias" ON public.categories;
 CREATE POLICY "Leitura de Categorias" ON public.categories FOR SELECT USING (true);
 
+DROP POLICY IF EXISTS "Inserção de Categorias" ON public.categories;
+CREATE POLICY "Inserção de Categorias" ON public.categories FOR INSERT WITH CHECK (true);
+
 DROP POLICY IF EXISTS "Leitura de Assuntos" ON public.subjects;
 CREATE POLICY "Leitura de Assuntos" ON public.subjects FOR SELECT USING (true);
 
@@ -204,7 +185,7 @@ CREATE POLICY "Inserção de Ocorrencias" ON public.occurrences FOR INSERT WITH 
 DROP POLICY IF EXISTS "Leitura de KB" ON public.kb_articles;
 CREATE POLICY "Leitura de KB" ON public.kb_articles FOR SELECT USING (true);
 
--- 5. SEED DATA ÚNICO PARA O DESENVOLVEDOR ADMIN
+-- 4. SEED DATA ÚNICO PARA O DESENVOLVEDOR ADMIN E 20 CATEGORIAS OFICIAIS
 -- -----------------------------------------------------------------------------
 INSERT INTO public.profiles (id, full_name, email, role, team_name)
 VALUES (
@@ -216,3 +197,28 @@ VALUES (
 ) 
 ON CONFLICT (email) DO UPDATE 
 SET role = 'administrador', full_name = 'Desenvolvedor Admin';
+
+INSERT INTO public.categories (name, slug, description, icon_name, display_order)
+VALUES 
+  ('Bônus e Promoções', 'bonus-promocoes', 'Regras de rollover, ativação de bônus, giros grátis e promoções vigentes', 'Gift', 1),
+  ('Não Houve Contato', 'nao-houve-contato', 'Chamados encerrados sem resposta do cliente ou desconexão prematura', 'PhoneOff', 2),
+  ('Cashback', 'cashback', 'Cálculo de programa de fidelidade, reembolso de perdas e créditos', 'Coins', 3),
+  ('Cassino Ao Vivo', 'cassino-ao-vivo', 'Problemas em roleta, blackjack, baccarat e provedores como Evolution/Pragmatic', 'Tv', 4),
+  ('Depósito', 'deposito', 'PIX pendente, atraso no envio de saldo, comprovantes e gateway de pagamento', 'ArrowDownCircle', 5),
+  ('Auto Exclusão', 'auto-exclusao', 'Jogo responsável, pausa temporária ou bloqueio definitivo solicitado pelo usuário', 'UserX', 6),
+  ('Saque', 'saque', 'Solicitação de retirada, análise de segurança, limite de saque e chave PIX', 'ArrowUpCircle', 7),
+  ('SMS', 'sms', 'Falhas no envio do código de verificação via SMS e validação de telefone', 'MessageSquare', 8),
+  ('Cadastro', 'cadastro', 'Alteração de dados cadastrais, erro de validação CPF e duplicidade de conta', 'UserCheck', 9),
+  ('Contas Banidas', 'contas-banidas', 'Suspeita de fraudes, uso de robôs, contas vinculadas e violação de T&C', 'Ban', 10),
+  ('Torneios', 'torneios', 'Classificação de liderança, premiação de lideres e regras de torneio', 'Trophy', 11),
+  ('GOS (Gestão Operacional de Segurança)', 'gos', 'Auditorias de segurança interna, verificação de comportamento e compliance', 'ShieldAlert', 12),
+  ('Contestação', 'contestacao', 'Chargebacks, disputas financeiras e contestação de apostas resolvidas', 'AlertCircle', 13),
+  ('Histórico Financeiro', 'historico-financeiro', 'Relatório de transações, extrato detalhado de apostas e movimentações', 'Receipt', 14),
+  ('Cassino Slots', 'cassino-slots', 'Jogos de caça-níqueis, rodadas trancadas, spingate e falhas de provedores', 'Dices', 15),
+  ('Imposto de Renda', 'imposto-de-renda', 'Declaração de prêmios, retenção na fonte e tributação de apostas esportivas', 'FileText', 16),
+  ('KYC (Verificação de Identidade)', 'kyc', 'Envio de documentos, selfie com documento, comprovante de residência e aprovação', 'BadgeCheck', 17),
+  ('Instabilidade', 'instabilidade', 'Lentidão no site/app, erros 500/502/504, quedas de servidor e manutenção', 'Activity', 18),
+  ('Crash Games', 'crash-games', 'Aviator, Spaceman, JetX, apostas presas e fechamento automático de rodada', 'Zap', 19),
+  ('E-mail', 'email', 'Envio e recebimento de e-mails institucionais, redefinição de senha e suporte', 'Mail', 20)
+ON CONFLICT (slug) DO UPDATE 
+SET name = EXCLUDED.name, description = EXCLUDED.description, icon_name = EXCLUDED.icon_name;

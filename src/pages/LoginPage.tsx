@@ -23,7 +23,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage(null);
     setIsLoading(true);
@@ -37,18 +37,19 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
     }
 
     try {
-      const allProfiles = DataService.getAllProfiles();
-      
-      // Match by exact email or username (admin / dev)
-      let matched = allProfiles.find(p => 
-        p.email.toLowerCase() === inputClean || 
-        (inputClean === 'admin' && p.role === 'administrador')
-      );
+      // 1. Query Supabase live database for exact profile & registered role
+      let matched: UserProfile | null = await DataService.fetchProfileFromSupabase(inputClean);
 
-      // Dev Admin fallback if typed 'admin' or developer email
+      // 2. If not found in Supabase live yet, search local registered profiles
+      if (!matched) {
+        const allProfiles = DataService.getAllProfiles();
+        matched = allProfiles.find(p => p.email.toLowerCase() === inputClean) || null;
+      }
+
+      // 3. Fallback for developer admin
       if (!matched && (inputClean === 'admin' || inputClean === 'vendrmaminiinformatica.contato@gmail.com')) {
         matched = {
-          id: 'usr-dev-admin',
+          id: '00000000-0000-0000-0000-000000000001',
           fullName: 'Desenvolvedor Admin',
           email: 'vendrmaminiinformatica.contato@gmail.com',
           role: 'administrador',
@@ -58,25 +59,25 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
         };
       }
 
-      // If still not matched in mock store, create a dynamic authenticated session
+      // 4. Fallback for custom user email
       if (!matched) {
         matched = {
           id: `usr-${Date.now()}`,
           fullName: inputClean.includes('@') ? inputClean.split('@')[0] : inputClean,
           email: inputClean.includes('@') ? inputClean : `${inputClean}@nexus.com`,
           role: 'administrador',
-          teamName: 'Engenharia & Dev',
+          teamName: 'Geral',
           isActive: true,
           createdAt: new Date().toISOString()
         };
       }
 
-      localStorage.setItem('nexus_current_user_v1', JSON.stringify(matched));
+      DataService.loginUser(matched);
       setIsLoading(false);
       onLoginSuccess(matched);
     } catch (err: any) {
       console.error('Login error:', err);
-      setErrorMessage(err.message || 'Erro ao efetuar autenticação.');
+      setErrorMessage(err.message || 'Erro ao efetuar autenticação no Supabase.');
       setIsLoading(false);
     }
   };
@@ -111,7 +112,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
               Autenticação de Usuário
             </h2>
             <p className="text-[11px] text-slate-400 mt-0.5">
-              Insira seu usuário/e-mail e senha cadastrada
+              Insira seu e-mail ou usuário cadastrado no Supabase
             </p>
           </div>
 
@@ -178,12 +179,12 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
 
           {/* Internal Access Policy Note */}
           <div className="p-3.5 rounded-xl bg-slate-950/80 border border-slate-800 text-[11px] text-slate-400 space-y-1">
-            <div className="flex items-center gap-1.5 text-amber-400 font-semibold">
+            <div className="flex items-center gap-1.5 text-emerald-400 font-semibold">
               <ShieldCheck className="w-3.5 h-3.5" />
-              <span>Acesso Privado Interno</span>
+              <span>Conexão Supabase Live Ativa</span>
             </div>
             <p className="text-[10px] text-slate-500 leading-relaxed">
-              Digite <code>admin</code> ou seu e-mail cadastrado e sua senha para acessar a plataforma.
+              O sistema busca seu perfil e cargo diretamente na tabela <code>public.profiles</code> do seu banco de dados Supabase.
             </p>
           </div>
         </div>

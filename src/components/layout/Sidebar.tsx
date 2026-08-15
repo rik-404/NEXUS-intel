@@ -9,8 +9,7 @@ import {
   AlertOctagon, 
   Settings, 
   BrainCircuit,
-  ChevronRight,
-  Lock
+  ChevronRight
 } from 'lucide-react';
 import { UserRole } from '../../lib/types';
 
@@ -32,36 +31,52 @@ interface SidebarProps {
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({ currentTab, onSelectTab, userRole }) => {
-  const isSupervisorOrAbove = ['lider', 'supervisor', 'administrador'].includes(userRole);
+  // Define module access per role
+  const isAllowedTab = (tabId: string): boolean => {
+    if (userRole === 'administrador') return true; // Admin has full access
+
+    if (userRole === 'supervisor') {
+      return ['dashboard', 'occurrences', 'knowledge-base', 'reports', 'shifts', 'team', 'intelligence', 'incidents', 'settings'].includes(tabId);
+    }
+
+    if (userRole === 'lider') {
+      return ['dashboard', 'occurrences', 'knowledge-base', 'reports', 'shifts', 'team'].includes(tabId);
+    }
+
+    if (userRole === 'atendente') {
+      return ['dashboard', 'occurrences', 'knowledge-base'].includes(tabId);
+    }
+
+    if (userRole === 'auditor') {
+      return ['dashboard', 'occurrences', 'knowledge-base', 'reports', 'settings'].includes(tabId);
+    }
+
+    return true;
+  };
 
   const menuItems = [
-    { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, phase: 'Fase 1' },
-    { id: 'occurrences', label: 'Atendimento / Ocorrências', icon: Headphones, phase: 'Fase 1' },
-    { id: 'knowledge-base', label: 'Base de Conhecimento', icon: BookOpen, phase: 'Fase 1' },
-    { id: 'reports', label: 'Relatórios Automáticos', icon: BarChart3, phase: 'Fase 2' },
-    { id: 'shifts', label: 'Passagem de Turno', icon: Clock3, phase: 'Fase 2' },
-    { 
-      id: 'team', 
-      label: 'Equipe & Desempenho', 
-      icon: Users, 
-      phase: 'Fase 2', 
-      restricted: true,
-      hidden: !isSupervisorOrAbove 
-    },
-    { id: 'intelligence', label: 'Inteligência & Tendências', icon: BrainCircuit, phase: 'Fase 3' },
-    { id: 'incidents', label: 'Módulo de Incidentes', icon: AlertOctagon, phase: 'Fase 3' },
-    { id: 'settings', label: 'Configurações', icon: Settings, phase: 'Fase 1' },
+    { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+    { id: 'occurrences', label: 'Atendimento / Ocorrências', icon: Headphones },
+    { id: 'knowledge-base', label: 'Base de Conhecimento', icon: BookOpen },
+    { id: 'reports', label: 'Relatórios Automáticos', icon: BarChart3 },
+    { id: 'shifts', label: 'Passagem de Turno', icon: Clock3 },
+    { id: 'team', label: 'Equipe & Usuários', icon: Users },
+    { id: 'intelligence', label: 'Inteligência & Tendências', icon: BrainCircuit },
+    { id: 'incidents', label: 'Módulo de Incidentes', icon: AlertOctagon },
+    { id: 'settings', label: 'Configurações', icon: Settings },
   ];
+
+  const visibleItems = menuItems.filter(item => isAllowedTab(item.id));
 
   return (
     <aside className="w-64 bg-slate-900/60 border-r border-slate-800 flex flex-col h-[calc(100vh-4rem)] sticky top-16 select-none shrink-0">
       <div className="p-4">
         <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider px-3 mb-2">
-          Navegação Principal
+          Navegação ({userRole.toUpperCase()})
         </p>
 
         <nav className="space-y-1">
-          {menuItems.filter(item => !item.hidden).map((item) => {
+          {visibleItems.map((item) => {
             const Icon = item.icon;
             const isActive = currentTab === item.id;
 
@@ -82,16 +97,9 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentTab, onSelectTab, userR
                   <span>{item.label}</span>
                 </div>
 
-                <div className="flex items-center space-x-1.5">
-                  {item.restricted && (
-                    <span title="Acesso Restrito a Líderes/Supervisores">
-                      <Lock className="w-3 h-3 text-amber-400" />
-                    </span>
-                  )}
-                  {isActive && (
-                    <ChevronRight className="w-3.5 h-3.5 text-indigo-400" />
-                  )}
-                </div>
+                {isActive && (
+                  <ChevronRight className="w-3.5 h-3.5 text-indigo-400" />
+                )}
               </button>
             );
           })}
@@ -102,10 +110,10 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentTab, onSelectTab, userR
       <div className="mt-auto p-4 m-3 rounded-xl bg-slate-800/40 border border-slate-700/50">
         <div className="flex items-center space-x-2">
           <div className="w-2 h-2 rounded-full bg-emerald-500"></div>
-          <span className="text-[11px] font-medium text-slate-300">Base Supabase Pronta</span>
+          <span className="text-[11px] font-medium text-slate-300">Acesso por Cargo Ativo</span>
         </div>
         <p className="text-[10px] text-slate-400 mt-1 leading-relaxed">
-          RLS e mascaramento LGPD ativados.
+          Modo: <strong className="text-indigo-300 capitalize">{userRole}</strong>
         </p>
       </div>
     </aside>

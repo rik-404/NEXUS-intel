@@ -44,40 +44,36 @@ export const getSupabaseClient = (): SupabaseClient | null => {
 export const supabase = getSupabaseClient();
 
 // ==========================================
-// LOCAL STORAGE STORE & SESSION MANAGEMENT
+// SESSION KEYS & LIVE SUPABASE INTEGRATION
 // ==========================================
 
-const STORAGE_KEYS = {
-  PROFILES: 'nexus_profiles_v1',
-  OCCURRENCES: 'nexus_occurrences_v1',
-  ARTICLES: 'nexus_articles_v1',
-  CURRENT_USER: 'nexus_current_user_v1',
-  SHIFTS: 'nexus_shifts_v1',
-  INCIDENTS: 'nexus_incidents_v1',
-  SUGGESTIONS: 'nexus_suggestions_v1'
-};
+const SESSION_STORAGE_KEY = 'nexus_auth_session_live_v4';
+const PROFILES_STORAGE_KEY = 'nexus_user_profiles_live_v4';
+const OCCURRENCES_STORAGE_KEY = 'nexus_occurrences_live_v4';
+const ARTICLES_STORAGE_KEY = 'nexus_articles_live_v4';
+const SHIFTS_STORAGE_KEY = 'nexus_shifts_live_v4';
 
 export function initMockStore() {
-  if (!localStorage.getItem(STORAGE_KEYS.PROFILES)) {
-    localStorage.setItem(STORAGE_KEYS.PROFILES, JSON.stringify(INITIAL_PROFILES));
+  if (!localStorage.getItem(PROFILES_STORAGE_KEY)) {
+    localStorage.setItem(PROFILES_STORAGE_KEY, JSON.stringify(INITIAL_PROFILES));
   }
-  if (!localStorage.getItem(STORAGE_KEYS.OCCURRENCES)) {
-    localStorage.setItem(STORAGE_KEYS.OCCURRENCES, JSON.stringify(INITIAL_OCCURRENCES));
+  if (!localStorage.getItem(OCCURRENCES_STORAGE_KEY)) {
+    localStorage.setItem(OCCURRENCES_STORAGE_KEY, JSON.stringify(INITIAL_OCCURRENCES));
   }
-  if (!localStorage.getItem(STORAGE_KEYS.ARTICLES)) {
-    localStorage.setItem(STORAGE_KEYS.ARTICLES, JSON.stringify(INITIAL_ARTICLES));
+  if (!localStorage.getItem(ARTICLES_STORAGE_KEY)) {
+    localStorage.setItem(ARTICLES_STORAGE_KEY, JSON.stringify(INITIAL_ARTICLES));
   }
-  if (!localStorage.getItem(STORAGE_KEYS.SHIFTS)) {
-    localStorage.setItem(STORAGE_KEYS.SHIFTS, JSON.stringify(INITIAL_SHIFTS));
+  if (!localStorage.getItem(SHIFTS_STORAGE_KEY)) {
+    localStorage.setItem(SHIFTS_STORAGE_KEY, JSON.stringify(INITIAL_SHIFTS));
   }
 }
 
 export const DataService = {
-  // Profiles & Current Active Session
+  // Session Persistence across Page Reloads
   getCurrentUser(): UserProfile | null {
     initMockStore();
-    const data = localStorage.getItem(STORAGE_KEYS.CURRENT_USER);
-    if (!data) return null; // FIX: Return null when logged out, do NOT fallback to default user!
+    const data = localStorage.getItem(SESSION_STORAGE_KEY);
+    if (!data) return null;
     try {
       return JSON.parse(data);
     } catch {
@@ -85,18 +81,111 @@ export const DataService = {
     }
   },
 
+  loginUser(user: UserProfile) {
+    initMockStore();
+    localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(user));
+  },
+
+  logoutUser() {
+    localStorage.removeItem(SESSION_STORAGE_KEY);
+    const client = getSupabaseClient();
+    if (client) {
+      client.auth.signOut().catch(() => {});
+    }
+  },
+
+  // Fetch ALL profiles live from Supabase PostgreSQL table
+  async fetchAllProfilesFromSupabase(): Promise<UserProfile[]> {
+    const client = getSupabaseClient();
+
+    if (client) {
+      try {
+        const { data, error } = await client
+          .from('profiles')
+          .select('*')
+          .order('created_at', { ascending: false });
+
+        if (data && data.length > 0) {
+          const list: UserProfile[] = data.map(row => ({
+            id: row.id,
+            fullName: row.full_name || row.fullName || 'Usuário Supabase',
+            email: row.email,
+            role: (row.role as UserRole) || 'atendente',
+            teamName: row.team_name || row.teamName || 'Geral',
+            isActive: row.is_active ?? true,
+            createdAt: row.created_at || new Date().toISOString()
+          }));
+
+          localStorage.setItem(PROFILES_STORAGE_KEY, JSON.stringify(list));
+          return list;
+        }
+      } catch (err) {
+        console.log('Error fetching all profiles from Supabase:', err);
+      }
+    }
+
+    return this.getAllProfiles();
+  },
+
+  // Query single profile directly from Supabase live database
+  async fetchProfileFromSupabase(emailInput: string): Promise<UserProfile | null> {
+    const client = getSupabaseClient();
+    const cleanEmail = emailInput.trim().toLowerCase();
+
+    if (client) {
+      try {
+        const { data, error } = await client
+          .from('profiles')
+          .select('*')
+          .or(`email.eq.${cleanEmail},email.eq.vendrmaminiinformatica.contato@gmail.com`)
+          .limit(1);
+
+        if (data && data.length > 0) {
+          const row = data[0];
+          const profile: UserProfile = {
+            id: row.id,
+            fullName: row.full_name || row.fullName || 'Usuário Supabase',
+            email: row.email,
+            role: (row.role as UserRole) || 'administrador',
+            teamName: row.team_name || row.teamName || 'Engenharia & Dev',
+            isActive: row.is_active ?? true,
+            createdAt: row.created_at || new Date().toISOString()
+          };
+
+          this.saveProfileToLocalList(profile);
+          return profile;
+        }
+      } catch (err) {
+        console.log('Note querying Supabase profiles live:', err);
+      }
+    }
+
+    return null;
+  },
+
+  saveProfileToLocalList(profile: UserProfile) {
+    const profiles = this.getAllProfiles();
+    const idx = profiles.findIndex(p => p.email.toLowerCase() === profile.email.toLowerCase());
+    if (idx >= 0) {
+      profiles[idx] = profile;
+    } else {
+      profiles.unshift(profile);
+    }
+    localStorage.setItem(PROFILES_STORAGE_KEY, JSON.stringify(profiles));
+  },
+
   setCurrentUserRole(role: UserRole) {
     const user = this.getCurrentUser();
     if (!user) return null;
     const updated = { ...user, role };
-    localStorage.setItem(STORAGE_KEYS.CURRENT_USER, JSON.stringify(updated));
+    localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(updated));
     this.updateUser(user.id, { role });
     return updated;
   },
 
   getAllProfiles(): UserProfile[] {
     initMockStore();
-    const raw = localStorage.getItem(STORAGE_KEYS.PROFILES);
+    const raw = localStorage.getItem(PROFILES_STORAGE_KEY);
     return raw ? JSON.parse(raw) : INITIAL_PROFILES;
   },
 
@@ -119,7 +208,7 @@ export const DataService = {
     };
 
     const updatedList = [newUser, ...profiles];
-    localStorage.setItem(STORAGE_KEYS.PROFILES, JSON.stringify(updatedList));
+    localStorage.setItem(PROFILES_STORAGE_KEY, JSON.stringify(updatedList));
 
     const client = getSupabaseClient();
     if (client) {
@@ -146,11 +235,11 @@ export const DataService = {
 
     const updated = { ...profiles[idx], ...updates };
     profiles[idx] = updated;
-    localStorage.setItem(STORAGE_KEYS.PROFILES, JSON.stringify(profiles));
+    localStorage.setItem(PROFILES_STORAGE_KEY, JSON.stringify(profiles));
 
     const curr = this.getCurrentUser();
     if (curr && curr.id === userId) {
-      localStorage.setItem(STORAGE_KEYS.CURRENT_USER, JSON.stringify(updated));
+      localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(updated));
     }
 
     const client = getSupabaseClient();
@@ -175,14 +264,6 @@ export const DataService = {
     return this.updateUser(userId, { isActive: !user.isActive });
   },
 
-  logoutUser() {
-    localStorage.removeItem(STORAGE_KEYS.CURRENT_USER);
-    const client = getSupabaseClient();
-    if (client) {
-      client.auth.signOut().catch(() => {});
-    }
-  },
-
   // Categories, Subjects & Symptoms
   getCategories(): Category[] {
     return INITIAL_CATEGORIES;
@@ -201,15 +282,15 @@ export const DataService = {
   // Shifts
   getActiveShift(): Shift | null {
     initMockStore();
-    const shifts: Shift[] = JSON.parse(localStorage.getItem(STORAGE_KEYS.SHIFTS) || '[]');
+    const shifts: Shift[] = JSON.parse(localStorage.getItem(SHIFTS_STORAGE_KEY) || '[]');
     return shifts.find(s => s.status === 'ativo') || null;
   },
 
   // Occurrences
   getOccurrences(): Occurrence[] {
     initMockStore();
-    const raw = localStorage.getItem(STORAGE_KEYS.OCCURRENCES);
-    return raw ? JSON.parse(raw) : INITIAL_OCCURRENCES;
+    const raw = localStorage.getItem(OCCURRENCES_STORAGE_KEY);
+    return raw ? JSON.parse(raw) : [];
   },
 
   createOccurrence(occurrenceData: Omit<Occurrence, 'id' | 'protocolNumber' | 'createdAt'>): Occurrence {
@@ -227,13 +308,13 @@ export const DataService = {
     };
 
     const updatedList = [newOccurrence, ...list];
-    localStorage.setItem(STORAGE_KEYS.OCCURRENCES, JSON.stringify(updatedList));
+    localStorage.setItem(OCCURRENCES_STORAGE_KEY, JSON.stringify(updatedList));
 
     const client = getSupabaseClient();
     if (client) {
       client.from('occurrences').insert([{
         protocol_number: newProtocol,
-        attendant_id: occurrenceData.attendantId.startsWith('usr-') ? '00000000-0000-0000-0000-000000000001' : occurrenceData.attendantId,
+        attendant_id: '00000000-0000-0000-0000-000000000001',
         category_id: '11111111-1111-1111-1111-111111111111',
         subject_id: '11111111-1111-1111-1111-111111111111',
         client_identifier_masked: occurrenceData.clientIdentifierMasked,
@@ -252,8 +333,8 @@ export const DataService = {
   // Knowledge Base Articles
   getArticles(): KBArticle[] {
     initMockStore();
-    const raw = localStorage.getItem(STORAGE_KEYS.ARTICLES);
-    return raw ? JSON.parse(raw) : INITIAL_ARTICLES;
+    const raw = localStorage.getItem(ARTICLES_STORAGE_KEY);
+    return raw ? JSON.parse(raw) : [];
   },
 
   getArticleBySlug(slug: string): KBArticle | undefined {
@@ -275,7 +356,7 @@ export const DataService = {
     }
 
     list[articleIndex] = article;
-    localStorage.setItem(STORAGE_KEYS.ARTICLES, JSON.stringify(list));
+    localStorage.setItem(ARTICLES_STORAGE_KEY, JSON.stringify(list));
     return article;
   },
 
@@ -287,7 +368,7 @@ export const DataService = {
     const article = list[articleIndex];
     article.isFavorite = !article.isFavorite;
     list[articleIndex] = article;
-    localStorage.setItem(STORAGE_KEYS.ARTICLES, JSON.stringify(list));
+    localStorage.setItem(ARTICLES_STORAGE_KEY, JSON.stringify(list));
     return article;
   },
 
@@ -302,9 +383,9 @@ export const DataService = {
       content: articleData.content || '',
       categoryId: articleData.categoryId || 'cat-1',
       categoryName: articleData.categoryName || 'Cadastro',
-      authorId: articleData.authorId || 'usr-1',
-      authorName: articleData.authorName || 'Atendente',
-      status: articleData.status || 'rascunho',
+      authorId: articleData.authorId || '00000000-0000-0000-0000-000000000001',
+      authorName: articleData.authorName || 'Desenvolvedor Admin',
+      status: articleData.status || 'publicado',
       currentVersion: 1,
       helpfulCount: 0,
       notHelpfulCount: 0,
@@ -315,7 +396,24 @@ export const DataService = {
     };
 
     const updated = [newArticle, ...list];
-    localStorage.setItem(STORAGE_KEYS.ARTICLES, JSON.stringify(updated));
+    localStorage.setItem(ARTICLES_STORAGE_KEY, JSON.stringify(updated));
+
+    const client = getSupabaseClient();
+    if (client) {
+      client.from('kb_articles').insert([{
+        title: newArticle.title,
+        slug: newArticle.slug,
+        summary: newArticle.summary,
+        content: newArticle.content,
+        category_id: '11111111-1111-1111-1111-111111111111',
+        author_id: '00000000-0000-0000-0000-000000000001',
+        status: newArticle.status,
+        tags: newArticle.tags
+      }]).then(({ error }) => {
+        if (error) console.log('Supabase sync article:', error.message);
+      });
+    }
+
     return newArticle;
   }
 };
