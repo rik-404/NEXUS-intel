@@ -29,55 +29,76 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
     setIsLoading(true);
 
     const inputClean = email.trim().toLowerCase();
+    const passClean = password.trim();
 
-    if (!inputClean || !password.trim()) {
-      setErrorMessage('Por favor, informe seu usuário/e-mail e senha.');
+    if (!inputClean) {
+      setErrorMessage('Por favor, informe seu usuário ou e-mail.');
+      setIsLoading(false);
+      return;
+    }
+
+    if (!passClean) {
+      setErrorMessage('Por favor, digite sua senha de acesso.');
       setIsLoading(false);
       return;
     }
 
     try {
-      // 1. Query Supabase live database for exact profile & registered role
-      let matched: UserProfile | null = await DataService.fetchProfileFromSupabase(inputClean);
+      // 1. Check if user is Developer Admin ('admin' or 'vendrmaminiinformatica.contato@gmail.com')
+      const isDevAdminInput = inputClean === 'admin' || inputClean === 'vendrmaminiinformatica.contato@gmail.com';
 
-      // 2. If not found in Supabase live yet, search local registered profiles
-      if (!matched) {
-        const allProfiles = DataService.getAllProfiles();
-        matched = allProfiles.find(p => p.email.toLowerCase() === inputClean) || null;
-      }
+      if (isDevAdminInput) {
+        if (passClean !== 'VendraX#2026') {
+          setErrorMessage('Senha incorreta para a conta Desenvolvedor Admin.');
+          setIsLoading(false);
+          return;
+        }
 
-      // 3. Fallback for developer admin
-      if (!matched && (inputClean === 'admin' || inputClean === 'vendrmaminiinformatica.contato@gmail.com')) {
-        matched = {
+        const devAdminProfile: UserProfile = {
           id: '00000000-0000-0000-0000-000000000001',
           fullName: 'Desenvolvedor Admin',
           email: 'vendrmaminiinformatica.contato@gmail.com',
+          password: 'VendraX#2026',
           role: 'administrador',
           teamName: 'Engenharia & Dev',
           isActive: true,
           createdAt: new Date().toISOString()
         };
+
+        DataService.loginUser(devAdminProfile);
+        setIsLoading(false);
+        onLoginSuccess(devAdminProfile);
+        return;
       }
 
-      // 4. Fallback for custom user email
+      // 2. Query Supabase live database or local profiles for registered users
+      let matched: UserProfile | null = await DataService.fetchProfileFromSupabase(inputClean);
+
       if (!matched) {
-        matched = {
-          id: `usr-${Date.now()}`,
-          fullName: inputClean.includes('@') ? inputClean.split('@')[0] : inputClean,
-          email: inputClean.includes('@') ? inputClean : `${inputClean}@nexus.com`,
-          role: 'administrador',
-          teamName: 'Geral',
-          isActive: true,
-          createdAt: new Date().toISOString()
-        };
+        const allProfiles = DataService.getAllProfiles();
+        matched = allProfiles.find(p => p.email.toLowerCase() === inputClean) || null;
       }
 
-      DataService.loginUser(matched);
+      if (matched) {
+        // Validate password if set
+        if (matched.password && matched.password !== passClean) {
+          setErrorMessage('Senha incorreta. Verifique suas credenciais e tente novamente.');
+          setIsLoading(false);
+          return;
+        }
+
+        DataService.loginUser(matched);
+        setIsLoading(false);
+        onLoginSuccess(matched);
+        return;
+      }
+
+      // 3. User not found in system
+      setErrorMessage('Usuário ou e-mail não encontrado. Entre em contato com seu supervisor.');
       setIsLoading(false);
-      onLoginSuccess(matched);
     } catch (err: any) {
       console.error('Login error:', err);
-      setErrorMessage(err.message || 'Erro ao efetuar autenticação no Supabase.');
+      setErrorMessage(err.message || 'Erro ao efetuar autenticação.');
       setIsLoading(false);
     }
   };
@@ -112,12 +133,12 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
               Autenticação de Usuário
             </h2>
             <p className="text-[11px] text-slate-400 mt-0.5">
-              Insira seu e-mail ou usuário cadastrado no Supabase
+              Insira seu e-mail/usuário e sua senha cadastrada
             </p>
           </div>
 
           {errorMessage && (
-            <div className="p-3.5 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-300 text-xs font-medium flex items-center gap-2">
+            <div className="p-3.5 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-300 text-xs font-medium flex items-center gap-2 animate-shake">
               <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
               <span>{errorMessage}</span>
             </div>
@@ -144,7 +165,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
 
             <div>
               <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-                Senha *
+                Senha de Acesso *
               </label>
               <div className="relative">
                 <Lock className="w-4 h-4 text-slate-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
@@ -179,12 +200,12 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
 
           {/* Internal Access Policy Note */}
           <div className="p-3.5 rounded-xl bg-slate-950/80 border border-slate-800 text-[11px] text-slate-400 space-y-1">
-            <div className="flex items-center gap-1.5 text-emerald-400 font-semibold">
+            <div className="flex items-center gap-1.5 text-indigo-400 font-semibold">
               <ShieldCheck className="w-3.5 h-3.5" />
-              <span>Conexão Supabase Live Ativa</span>
+              <span>Autenticação de Senha Ativada</span>
             </div>
             <p className="text-[10px] text-slate-500 leading-relaxed">
-              O sistema busca seu perfil e cargo diretamente na tabela <code>public.profiles</code> do seu banco de dados Supabase.
+              O sistema exige a validação exata da senha cadastrada para o seu usuário.
             </p>
           </div>
         </div>

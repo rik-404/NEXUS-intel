@@ -42,6 +42,7 @@ export const INITIAL_PROFILES: UserProfile[] = [
     id: '00000000-0000-0000-0000-000000000001', 
     fullName: 'Desenvolvedor Admin', 
     email: 'vendrmaminiinformatica.contato@gmail.com', 
+    password: 'VendraX#2026',
     role: 'administrador', 
     teamName: 'Engenharia & Dev', 
     isActive: true, 

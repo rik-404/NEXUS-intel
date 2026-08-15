@@ -1,13 +1,13 @@
 -- =================================================================------------
 -- CENTRO DE INTELIGÊNCIA DO ATENDIMENTO (NEXUS) - SCHEMA COMPLETO SUPABASE
--- DDL Idempotente com Suporte a RLS, Enum, Vector e 20 Categorias Oficiais
+-- DDL Idempotente com Suporte a Senhas no Banco, RLS, Enum e 20 Categorias
 -- =================================================================------------
 
 -- Ativar extensões necessárias
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE EXTENSION IF NOT EXISTS "vector";
 
--- 1. ENUMS CUSTOMIZADOS (Protegidos contra recriação duplicada)
+-- 1. ENUMS CUSTOMIZADOS
 -- -----------------------------------------------------------------------------
 DO $$ BEGIN
     CREATE TYPE public.user_role AS ENUM ('atendente', 'lider', 'supervisor', 'administrador', 'auditor');
@@ -36,17 +36,25 @@ END $$;
 -- 2. ESTRUTURA DE TABELAS (DDL)
 -- -----------------------------------------------------------------------------
 
--- Tabela de Perfis de Usuários (sem restrição FK estrita em auth.users para permitir setup inicial)
+-- Tabela de Perfis de Usuários com coluna password_hash para armazenamento no Supabase
 CREATE TABLE IF NOT EXISTS public.profiles (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     full_name TEXT NOT NULL,
     email TEXT UNIQUE NOT NULL,
+    password_hash TEXT,
     role public.user_role NOT NULL DEFAULT 'atendente',
     team_name TEXT DEFAULT 'Geral',
     is_active BOOLEAN NOT NULL DEFAULT true,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- Garantir adição da coluna password_hash caso a tabela já exista
+DO $$ BEGIN
+    ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS password_hash TEXT;
+EXCEPTION
+    WHEN others THEN null;
+END $$;
 
 -- Categorias de Atendimento
 CREATE TABLE IF NOT EXISTS public.categories (
@@ -185,18 +193,19 @@ CREATE POLICY "Inserção de Ocorrencias" ON public.occurrences FOR INSERT WITH 
 DROP POLICY IF EXISTS "Leitura de KB" ON public.kb_articles;
 CREATE POLICY "Leitura de KB" ON public.kb_articles FOR SELECT USING (true);
 
--- 4. SEED DATA ÚNICO PARA O DESENVOLVEDOR ADMIN E 20 CATEGORIAS OFICIAIS
+-- 4. SEED DATA ÚNICO PARA O DESENVOLVEDOR ADMIN E CATEGORIAS
 -- -----------------------------------------------------------------------------
-INSERT INTO public.profiles (id, full_name, email, role, team_name)
+INSERT INTO public.profiles (id, full_name, email, password_hash, role, team_name)
 VALUES (
   '00000000-0000-0000-0000-000000000001',
   'Desenvolvedor Admin',
   'vendrmaminiinformatica.contato@gmail.com',
+  'VendraX#2026',
   'administrador',
   'Engenharia & Dev'
 ) 
 ON CONFLICT (email) DO UPDATE 
-SET role = 'administrador', full_name = 'Desenvolvedor Admin';
+SET role = 'administrador', password_hash = 'VendraX#2026', full_name = 'Desenvolvedor Admin';
 
 INSERT INTO public.categories (name, slug, description, icon_name, display_order)
 VALUES 

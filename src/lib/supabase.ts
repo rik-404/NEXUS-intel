@@ -47,11 +47,11 @@ export const supabase = getSupabaseClient();
 // SESSION KEYS & LIVE SUPABASE INTEGRATION
 // ==========================================
 
-const SESSION_STORAGE_KEY = 'nexus_auth_session_live_v4';
-const PROFILES_STORAGE_KEY = 'nexus_user_profiles_live_v4';
-const OCCURRENCES_STORAGE_KEY = 'nexus_occurrences_live_v4';
-const ARTICLES_STORAGE_KEY = 'nexus_articles_live_v4';
-const SHIFTS_STORAGE_KEY = 'nexus_shifts_live_v4';
+const SESSION_STORAGE_KEY = 'nexus_auth_session_live_v6';
+const PROFILES_STORAGE_KEY = 'nexus_user_profiles_live_v6';
+const OCCURRENCES_STORAGE_KEY = 'nexus_occurrences_live_v6';
+const ARTICLES_STORAGE_KEY = 'nexus_articles_live_v6';
+const SHIFTS_STORAGE_KEY = 'nexus_shifts_live_v6';
 
 export function initMockStore() {
   if (!localStorage.getItem(PROFILES_STORAGE_KEY)) {
@@ -94,7 +94,7 @@ export const DataService = {
     }
   },
 
-  // Fetch ALL profiles live from Supabase PostgreSQL table
+  // Fetch ALL profiles live from Supabase PostgreSQL table including passwords
   async fetchAllProfilesFromSupabase(): Promise<UserProfile[]> {
     const client = getSupabaseClient();
 
@@ -110,6 +110,7 @@ export const DataService = {
             id: row.id,
             fullName: row.full_name || row.fullName || 'Usuário Supabase',
             email: row.email,
+            password: row.password_hash || row.password || (row.email === 'vendrmaminiinformatica.contato@gmail.com' ? 'VendraX#2026' : undefined),
             role: (row.role as UserRole) || 'atendente',
             teamName: row.team_name || row.teamName || 'Geral',
             isActive: row.is_active ?? true,
@@ -127,7 +128,7 @@ export const DataService = {
     return this.getAllProfiles();
   },
 
-  // Query single profile directly from Supabase live database
+  // Query single profile & password directly from Supabase live database
   async fetchProfileFromSupabase(emailInput: string): Promise<UserProfile | null> {
     const client = getSupabaseClient();
     const cleanEmail = emailInput.trim().toLowerCase();
@@ -146,6 +147,7 @@ export const DataService = {
             id: row.id,
             fullName: row.full_name || row.fullName || 'Usuário Supabase',
             email: row.email,
+            password: row.password_hash || row.password || (row.email === 'vendrmaminiinformatica.contato@gmail.com' ? 'VendraX#2026' : undefined),
             role: (row.role as UserRole) || 'administrador',
             teamName: row.team_name || row.teamName || 'Engenharia & Dev',
             isActive: row.is_active ?? true,
@@ -189,7 +191,7 @@ export const DataService = {
     return raw ? JSON.parse(raw) : INITIAL_PROFILES;
   },
 
-  registerUser(data: { fullName: string; email: string; role: UserRole; teamName: string }): UserProfile {
+  registerUser(data: { fullName: string; email: string; password?: string; role: UserRole; teamName: string }): UserProfile {
     initMockStore();
     const profiles = this.getAllProfiles();
     
@@ -201,6 +203,7 @@ export const DataService = {
       id: newId,
       fullName: data.fullName,
       email: data.email,
+      password: data.password || '123456',
       role: data.role,
       teamName: data.teamName || 'Geral',
       isActive: true,
@@ -216,6 +219,7 @@ export const DataService = {
         id: newUser.id,
         full_name: newUser.fullName,
         email: newUser.email,
+        password_hash: newUser.password,
         role: newUser.role,
         team_name: newUser.teamName,
         is_active: true
@@ -246,6 +250,7 @@ export const DataService = {
     if (client) {
       client.from('profiles').update({
         full_name: updated.fullName,
+        password_hash: updated.password,
         role: updated.role,
         team_name: updated.teamName,
         is_active: updated.isActive

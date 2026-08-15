@@ -7,19 +7,7 @@ export const ShiftsPage: React.FC = () => {
   const activeShift = DataService.getActiveShift();
   const currentUser = DataService.getCurrentUser();
 
-  const [handovers, setHandovers] = useState<ShiftHandover[]>([
-    {
-      id: 'ho-1',
-      shiftId: 'shift-1',
-      shiftTitle: 'Turno Manhã (07h às 15h)',
-      authorId: 'usr-3',
-      authorName: 'Roberto Andrade (Supervisor)',
-      pendingTasks: 'Acompanhar liberação da API do banco parceiro no período da tarde.',
-      shiftAlerts: 'Instabilidade intermitente de timeout no ERP Nexo entre 09h e 10h.',
-      observations: 'Equipe do turno respondeu bem, 92% das dúvidas resolvidas via KB.',
-      createdAt: '2026-08-15T07:10:00Z'
-    }
-  ]);
+  const [handovers, setHandovers] = useState<ShiftHandover[]>([]);
 
   const [pendingTasks, setPendingTasks] = useState('');
   const [shiftAlerts, setShiftAlerts] = useState('');
@@ -28,7 +16,7 @@ export const ShiftsPage: React.FC = () => {
 
   const handleSubmitHandover = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!pendingTasks.trim() && !shiftAlerts.trim()) return;
+    if (!pendingTasks.trim() && !shiftAlerts.trim() && !observations.trim()) return;
 
     const newHandover: ShiftHandover = {
       id: `ho-${Date.now()}`,
@@ -57,7 +45,7 @@ export const ShiftsPage: React.FC = () => {
         <div>
           <h1 className="text-xl font-extrabold text-white flex items-center gap-2">
             <Clock3 className="w-5 h-5 text-indigo-400" />
-            Passagem de Turno Operacional (Fase 2)
+            Passagem de Turno Operacional
           </h1>
           <p className="text-xs text-slate-400 mt-0.5">
             Registro de pendências, alertas críticos e observações gerais para a equipe do próximo turno.
@@ -90,8 +78,8 @@ export const ShiftsPage: React.FC = () => {
               rows={2}
               value={pendingTasks}
               onChange={(e) => setPendingTasks(e.target.value)}
-              placeholder="Ex: Cliente XYZ aguarda retorno de e-mail sobre estorno PIX..."
-              className="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-xs text-slate-200"
+              placeholder="Ex: Cliente XYZ aguarda retorno sobre estorno PIX..."
+              className="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-xs text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
             ></textarea>
           </div>
 
@@ -104,8 +92,8 @@ export const ShiftsPage: React.FC = () => {
               rows={2}
               value={shiftAlerts}
               onChange={(e) => setShiftAlerts(e.target.value)}
-              placeholder="Ex: Atenção com instabilidade no ERP entre 14h e 16h..."
-              className="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-xs text-slate-200"
+              placeholder="Ex: Atenção com instabilidade no gateway de depósito entre 14h e 16h..."
+              className="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-xs text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
             ></textarea>
           </div>
 
@@ -118,14 +106,14 @@ export const ShiftsPage: React.FC = () => {
               value={observations}
               onChange={(e) => setObservations(e.target.value)}
               placeholder="Ex: Desempenho excelente da equipe, sem acúmulo de fila."
-              className="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-xs text-slate-200"
+              className="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-xs text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
             ></textarea>
           </div>
 
           <div className="flex justify-end">
             <button
               type="submit"
-              className="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs shadow-lg shadow-indigo-500/25 flex items-center space-x-2"
+              className="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs shadow-lg shadow-indigo-500/25 flex items-center space-x-2 cursor-pointer active:scale-95"
             >
               <Send className="w-4 h-4" />
               <span>Publicar Passagem de Turno</span>
@@ -138,39 +126,46 @@ export const ShiftsPage: React.FC = () => {
       <div className="glass-panel rounded-2xl border border-slate-800 p-6 shadow-xl space-y-4">
         <h3 className="text-sm font-bold text-white">Histórico de Passagens de Turno</h3>
 
-        <div className="space-y-4">
-          {handovers.map((ho) => (
-            <div key={ho.id} className="p-4 rounded-xl bg-slate-900/80 border border-slate-800 space-y-2 text-xs">
-              <div className="flex items-center justify-between border-b border-slate-800 pb-2">
-                <div className="flex items-center space-x-2">
-                  <User className="w-4 h-4 text-indigo-400" />
-                  <span className="font-bold text-slate-200">{ho.authorName}</span>
+        {handovers.length === 0 ? (
+          <div className="text-center py-12 border border-dashed border-slate-800 rounded-xl">
+            <p className="text-xs text-slate-400 font-semibold">Nenhuma passagem de turno registrada neste período.</p>
+            <p className="text-[11px] text-slate-500 mt-1">Utilize o formulário acima para publicar as observações do seu turno.</p>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {handovers.map((ho) => (
+              <div key={ho.id} className="p-4 rounded-xl bg-slate-900/80 border border-slate-800 space-y-2 text-xs">
+                <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+                  <div className="flex items-center space-x-2">
+                    <User className="w-4 h-4 text-indigo-400" />
+                    <span className="font-bold text-slate-200">{ho.authorName}</span>
+                  </div>
+                  <span className="text-[10px] text-slate-500 font-mono">
+                    {new Date(ho.createdAt).toLocaleString('pt-BR')}
+                  </span>
                 </div>
-                <span className="text-[10px] text-slate-500 font-mono">
-                  {new Date(ho.createdAt).toLocaleString('pt-BR')}
-                </span>
+
+                {ho.shiftAlerts && (
+                  <div className="p-2.5 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-200">
+                    <strong>⚠️ Alerta de Turno:</strong> {ho.shiftAlerts}
+                  </div>
+                )}
+
+                {ho.pendingTasks && (
+                  <div>
+                    <strong className="text-slate-300">📌 Pendências:</strong> {ho.pendingTasks}
+                  </div>
+                )}
+
+                {ho.observations && (
+                  <div className="text-slate-400">
+                    <strong className="text-slate-300">💬 Observações:</strong> {ho.observations}
+                  </div>
+                )}
               </div>
-
-              {ho.shiftAlerts && (
-                <div className="p-2.5 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-200">
-                  <strong>⚠️ Alerta de Turno:</strong> {ho.shiftAlerts}
-                </div>
-              )}
-
-              {ho.pendingTasks && (
-                <div>
-                  <strong className="text-slate-300">📌 Pendências:</strong> {ho.pendingTasks}
-                </div>
-              )}
-
-              {ho.observations && (
-                <div className="text-slate-400">
-                  <strong className="text-slate-300">💬 Observações:</strong> {ho.observations}
-                </div>
-              )}
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );
