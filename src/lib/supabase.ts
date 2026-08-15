@@ -26,7 +26,6 @@ const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
 
 export const isSupabaseConfigured = Boolean(supabaseUrl && supabaseAnonKey);
 
-// Singleton Supabase Client to avoid multiple GoTrueClient warnings
 let globalSupabaseClient: SupabaseClient | null = null;
 
 export const getSupabaseClient = (): SupabaseClient | null => {
@@ -45,7 +44,7 @@ export const getSupabaseClient = (): SupabaseClient | null => {
 export const supabase = getSupabaseClient();
 
 // ==========================================
-// LOCAL STORAGE STORE & SUPABASE HYBRID SERVICE
+// LOCAL STORAGE STORE & SESSION MANAGEMENT
 // ==========================================
 
 const STORAGE_KEYS = {
@@ -58,7 +57,6 @@ const STORAGE_KEYS = {
   SUGGESTIONS: 'nexus_suggestions_v1'
 };
 
-// Initialize LocalStorage with rich mock data if empty
 export function initMockStore() {
   if (!localStorage.getItem(STORAGE_KEYS.PROFILES)) {
     localStorage.setItem(STORAGE_KEYS.PROFILES, JSON.stringify(INITIAL_PROFILES));
@@ -69,20 +67,22 @@ export function initMockStore() {
   if (!localStorage.getItem(STORAGE_KEYS.ARTICLES)) {
     localStorage.setItem(STORAGE_KEYS.ARTICLES, JSON.stringify(INITIAL_ARTICLES));
   }
-  if (!localStorage.getItem(STORAGE_KEYS.CURRENT_USER)) {
-    localStorage.setItem(STORAGE_KEYS.CURRENT_USER, JSON.stringify(INITIAL_PROFILES[0])); // Default: Dev Admin
-  }
   if (!localStorage.getItem(STORAGE_KEYS.SHIFTS)) {
     localStorage.setItem(STORAGE_KEYS.SHIFTS, JSON.stringify(INITIAL_SHIFTS));
   }
 }
 
 export const DataService = {
-  // Profiles & Current User
+  // Profiles & Current Active Session
   getCurrentUser(): UserProfile | null {
     initMockStore();
     const data = localStorage.getItem(STORAGE_KEYS.CURRENT_USER);
-    return data ? JSON.parse(data) : INITIAL_PROFILES[0];
+    if (!data) return null; // FIX: Return null when logged out, do NOT fallback to default user!
+    try {
+      return JSON.parse(data);
+    } catch {
+      return null;
+    }
   },
 
   setCurrentUserRole(role: UserRole) {
@@ -104,7 +104,6 @@ export const DataService = {
     initMockStore();
     const profiles = this.getAllProfiles();
     
-    // Generate valid UUID for Supabase compatibility
     const newId = (typeof crypto !== 'undefined' && crypto.randomUUID)
       ? crypto.randomUUID()
       : `00000000-0000-4000-8000-${String(Date.now()).padStart(12, '0')}`;
@@ -122,7 +121,6 @@ export const DataService = {
     const updatedList = [newUser, ...profiles];
     localStorage.setItem(STORAGE_KEYS.PROFILES, JSON.stringify(updatedList));
 
-    // Async push to Supabase with explicit non-null UUID ID
     const client = getSupabaseClient();
     if (client) {
       client.from('profiles').upsert([{
@@ -150,7 +148,6 @@ export const DataService = {
     profiles[idx] = updated;
     localStorage.setItem(STORAGE_KEYS.PROFILES, JSON.stringify(profiles));
 
-    // Update current user session if active
     const curr = this.getCurrentUser();
     if (curr && curr.id === userId) {
       localStorage.setItem(STORAGE_KEYS.CURRENT_USER, JSON.stringify(updated));
